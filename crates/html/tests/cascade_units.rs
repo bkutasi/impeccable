@@ -129,6 +129,14 @@ fn apply_static_declaration_matches_node() {
         (s("outlineWidth"), false, [0, 0, 0], 13, false, s("0px")),
         (s("borderLeftWidth"), false, [0, 0, 0], 14, false, s("3px")),
         (s("borderLeftColor"), false, [0, 0, 0], 14, false, s("teal")),
+        (
+            s("borderLeftStyle"),
+            false,
+            [0, 0, 0],
+            14,
+            false,
+            s("solid"),
+        ),
     ];
     assert_eq!(got, expected);
     // prop is the expanded property name

@@ -102,6 +102,41 @@ fn unresolved_border_style_is_not_a_visible_boundary() {
 }
 
 #[test]
+fn concrete_border_style_overrides_earlier_unresolved_style() {
+    let html = r#"
+        <style>
+          .reverse {
+            border-width: 1px;
+            border-color: #111;
+            border-style: var(--missing-border-style);
+            border-style: solid;
+            padding: 0;
+          }
+        </style>
+        <div class="reverse"><p>Readable card copy</p></div>
+    "#;
+
+    assert_eq!(cramped_padding_ids(html, None).len(), 1);
+}
+
+#[test]
+fn multi_value_border_style_fallback_is_not_misread_on_every_side() {
+    let html = r#"
+        <style>
+          .reverse {
+            border-width: 1px;
+            border-color: #111;
+            border-style: var(--missing-border-styles, none solid);
+            padding: 0;
+          }
+        </style>
+        <div class="reverse"><p>Readable card copy</p></div>
+    "#;
+
+    assert!(cramped_padding_ids(html, None).is_empty());
+}
+
+#[test]
 fn unresolved_border_shorthand_component_is_not_a_visible_boundary() {
     let html = r#"
         <style>

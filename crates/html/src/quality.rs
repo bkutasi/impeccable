@@ -263,10 +263,19 @@ pub fn check_quality(q: &QualityInput<'_, '_>) -> Vec<RuleHit> {
             };
             let bs = |k: &str| {
                 let value = sv(style, k);
+                let value = js::to_lower_case(js::trim(value));
                 value.is_empty()
-                    || (value != "none"
-                        && value != "hidden"
-                        && !has_unresolved_var(value))
+                    || matches!(
+                        value.as_str(),
+                        "solid"
+                            | "dashed"
+                            | "dotted"
+                            | "double"
+                            | "groove"
+                            | "ridge"
+                            | "inset"
+                            | "outset"
+                    )
             };
             let border_visible = [
                 border_w[0] > 0.0 && !bc("borderTopColor") && bs("borderTopStyle"),
