@@ -79,12 +79,15 @@ pub fn resolve_font_size_px(el: &StaticElement<'_>) -> f64 {
 /// JS: checks.mjs#hasVisibleBackgroundBoundary(style, el, win)
 pub fn has_visible_background_boundary(style: &StyleValues, el: &StaticElement<'_>) -> bool {
     let bg = sv(style, "backgroundColor");
-    if css_color_is_transparent(Some(bg)) {
+    if has_unresolved_var(bg) || css_color_is_transparent(Some(bg)) {
         return false;
     }
     let mut parent = el.parent_element();
     while let Some(p) = parent {
         let parent_bg = sv(p.style(), "backgroundColor");
+        if has_unresolved_var(parent_bg) {
+            return false;
+        }
         if !css_color_is_transparent(Some(parent_bg)) {
             return !colors_nearly_match(Some(bg), Some(parent_bg));
         }
@@ -177,8 +180,16 @@ const INTERACTIVE: &str = "a[href], button, summary, label, select, textarea, [r
 const FURNITURE: &str = "nav, [role=\"navigation\"], td, th, [role=\"gridcell\"], [role=\"cell\"], caption, figcaption, dt, dd, footer, [class*=\"meta\" i], [class*=\"label\" i], [class*=\"badge\" i], [class*=\"chip\" i], [class*=\"pill\" i], [class*=\"tag\" i], [class*=\"kicker\" i], [class*=\"eyebrow\" i], [class*=\"breadcrumb\" i], [class*=\"timestamp\" i], [class*=\"category\" i], [class*=\"caption\" i], [class*=\"nav\" i]";
 const SMALLPRINT: &str = "small, footer, [class*=\"legal\" i], [class*=\"copyright\" i], [class*=\"fineprint\" i], [class*=\"fine-print\" i], [class*=\"smallprint\" i], [class*=\"small-print\" i], [class*=\"disclaimer\" i], [class*=\"disclosure\" i], [class*=\"footnote\" i]";
 
-fn side_len(style: &StyleValues, key: &str, font_size: f64) -> f64 {
-    resolve_length_px(sv_opt(style, key), font_size).unwrap_or(0.0)
+fn has_unresolved_var(value: &str) -> bool {
+    js::to_lower_case(value).contains("var(")
+}
+
+fn side_len(style: &StyleValues, key: &str, font_size: f64) -> Option<f64> {
+    let value = sv_opt(style, key)?;
+    if has_unresolved_var(value) {
+        return None;
+    }
+    Some(resolve_length_px(Some(value), font_size).unwrap_or(0.0))
 }
 
 /// JS: checks.mjs#checkQuality(opts), static (`rect: null`) branches.
@@ -246,7 +257,10 @@ pub fn check_quality(q: &QualityInput<'_, '_>) -> Vec<RuleHit> {
                 bw("borderBottomWidth"),
                 bw("borderLeftWidth"),
             ];
-            let bc = |k: &str| css_color_is_transparent(Some(sv(style, k)));
+            let bc = |k: &str| {
+                let value = sv(style, k);
+                has_unresolved_var(value) || css_color_is_transparent(Some(value))
+            };
             let border_visible = [
                 border_w[0] > 0.0 && !bc("borderTopColor"),
                 border_w[1] > 0.0 && !bc("borderRightColor"),
@@ -259,6 +273,7 @@ pub fn check_quality(q: &QualityInput<'_, '_>) -> Vec<RuleHit> {
             // `style.outline` is never set on a static style: the shorthand
             // fallback branch is unreachable here.
             let outline_visible = outline_w > 0.0
+                && !has_unresolved_var(outline_color_val)
                 && !css_color_is_transparent(Some(outline_color_val))
                 && !outline_style_val.is_empty()
                 && outline_style_val != "none";
@@ -289,8 +304,10 @@ pub fn check_quality(q: &QualityInput<'_, '_>) -> Vec<RuleHit> {
                         side_len(cs, "marginLeft", font_size),
                     ];
                     for s in 0..4 {
-                        if child_pad[s] >= CHILD_INSULATE_THRESHOLD
-                            || child_margin[s] >= CHILD_INSULATE_THRESHOLD
+                        if child_pad[s].is_none()
+                            || child_margin[s].is_none()
+                            || child_pad[s].is_some_and(|v| v >= CHILD_INSULATE_THRESHOLD)
+                            || child_margin[s].is_some_and(|v| v >= CHILD_INSULATE_THRESHOLD)
                         {
                             children_insulate[s] = true;
                         }
@@ -301,7 +318,10 @@ pub fn check_quality(q: &QualityInput<'_, '_>) -> Vec<RuleHit> {
                 for s in 0..4 {
                     let bg_bounds_side = bg_visible;
                     let side_bounded = border_visible[s] || outline_visible || bg_bounds_side;
-                    if side_bounded && pad[s] <= PAD_THRESHOLD && !children_insulate[s] {
+                    if side_bounded
+                        && pad[s].is_some_and(|v| v <= PAD_THRESHOLD)
+                        && !children_insulate[s]
+                    {
                         flush_sides.push(side_names[s]);
                     }
                 }

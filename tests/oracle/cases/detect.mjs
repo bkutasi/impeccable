@@ -74,6 +74,20 @@ function Thumb({ url }: { url?: string }) {
 `),
       args: ['--no-config', '--json', 'repro.tsx'],
     },
+    {
+      id: 'detect-unresolved-custom-property-padding', verb: 'detect',
+      setup: (ws) => fs.writeFileSync(path.join(ws, 'image-card.html'), `<!doctype html>
+<link rel="stylesheet" href="brand/tokens.css">
+<style>
+  .reverse {
+    background: var(--brand-surface);
+    padding: var(--brand-pad-y) var(--brand-pad-x);
+  }
+</style>
+<div class="reverse"><p>Readable card copy</p></div>
+`),
+      args: ['--no-config', '--json', 'image-card.html'],
+    },
 
     // Flag surface and errors
     { id: 'detect-help', verb: 'detect', args: ['--help'] },
