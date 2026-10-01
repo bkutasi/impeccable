@@ -36,8 +36,11 @@ impl AssetRenderer for CdpAssetRenderer {
         &mut self,
         requests: &[AssetCaptureRequest],
     ) -> Result<Vec<AssetCapture>, String> {
-        if requests.is_empty() || requests.len() > 32 {
-            return Err("capture batch must contain 1 to 32 regions".into());
+        if requests.is_empty() || requests.len() > crate::capture_snapshot::MAX_CAPTURE_REGIONS {
+            return Err(format!(
+                "capture batch must contain 1 to {} regions",
+                crate::capture_snapshot::MAX_CAPTURE_REGIONS
+            ));
         }
         let request = &requests[0];
         for item in requests {

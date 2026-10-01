@@ -8,6 +8,10 @@ use impeccable_comp_verbs::asset_capture::capture_sha256;
 use impeccable_comp_verbs::build_phase;
 use impeccable_comp_verbs::entry_capture::{EntryRenderer, EntryRequest, EntryStage};
 use serde_json::{Value, json};
+#[path = "support/capture_service.rs"]
+#[allow(dead_code)]
+mod capture_service;
+use capture_service::CaptureService;
 use std::{
     fs,
     path::PathBuf,
@@ -65,15 +69,18 @@ impl Fixture {
     /// native build. Only the verb's own environment names the temporary home;
     /// the browser launches from the real process environment.
     fn run(&self, args: &[&str]) -> (i32, String) {
+        let renderer = ReviewedEntryRenderer::local(&self.project, Some(&self.home));
+        self.run_with(args, &renderer)
+    }
+    fn run_with(&self, args: &[&str], renderer: &dyn EntryRenderer) -> (i32, String) {
         let env = HashMap::from([
             ("HOME".to_string(), self.home.display().to_string()),
             ("USERPROFILE".to_string(), self.home.display().to_string()),
             ("IMPECCABLE_NATIVE_CAPTURE".to_string(), "1".to_string()),
         ]);
         let (mut io, captured) = Io::captured("", self.project.clone(), env);
-        let renderer = ReviewedEntryRenderer::local(&self.project, io.home().as_deref());
         let argv: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-        let code = build_phase::run_with_renderer(&argv, &mut io, &build_phase::no_organic_scan, Some(&renderer));
+        let code = build_phase::run_with_renderer(&argv, &mut io, &build_phase::no_organic_scan, Some(renderer));
         drop(io);
         let text = format!(
             "{}{}",
@@ -83,7 +90,11 @@ impl Fixture {
         (code, text)
     }
     fn record_hero(&self) -> (bool, String, Value) {
-        let (code, text) = self.run(&["record", "hero", "--min", "0.95"]);
+        let renderer = ReviewedEntryRenderer::local(&self.project, Some(&self.home));
+        self.record_hero_with(&renderer)
+    }
+    fn record_hero_with(&self, renderer: &dyn EntryRenderer) -> (bool, String, Value) {
+        let (code, text) = self.run_with(&["record", "hero", "--min", "0.95"], renderer);
         let report = fs::read(self.project.join(".impeccable/review/diff/hero/report.json"))
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
@@ -92,11 +103,15 @@ impl Fixture {
     }
     /// The local review store entry for an approved assembled first viewport,
     /// in the shape the component-review capture writes.
-    fn approve(&self, screenshot: &[u8]) {
-        fs::write(self.project.join(".impeccable/review/hero.json"), br#"{"id":"hero"}"#).unwrap();
+    /// Where the local review store keeps this project's first-viewport review.
+    fn session(&self) -> PathBuf {
         let project = self.project.canonicalize().unwrap();
         let key = capture_sha256(format!("{}\0hero", project.display()).as_bytes());
-        let session = self.home.join(".impeccable/component-reviews").join(key);
+        self.home.join(".impeccable/component-reviews").join(key)
+    }
+    fn approve(&self, screenshot: &[u8]) {
+        fs::write(self.project.join(".impeccable/review/hero.json"), br#"{"id":"hero"}"#).unwrap();
+        let session = self.session();
         fs::create_dir_all(session.join("blobs")).unwrap();
         let png = capture_sha256(screenshot);
         fs::write(session.join("blobs").join(&png), screenshot).unwrap();
@@ -419,4 +434,65 @@ fn svg_fragment_masks_and_patterns_are_code_not_raster() {
     capture_with(&f, &format!("{PAGE}{masked}")).unwrap();
     let patterned = format!("{svg}<svg style=\"position:absolute;left:0;top:0\" width=\"240\" height=\"160\"><rect width=\"240\" height=\"160\" fill=\"url(#p)\"/></svg>");
     capture_with(&f, &format!("{PAGE}{patterned}")).unwrap();
+}
+
+#[test]
+fn host_capture_service_carries_a_text_only_hero_and_binds_its_accepted_review() {
+    if !browser_available() {
+        return;
+    }
+    let f = Fixture::new();
+    let strokes = |angle: &str| PAGE
+        .replace("background:#181c24", &format!("background:repeating-linear-gradient({angle},#181c24 0 2px,#f4f4f0 2px 4px)"))
+        .replace("background:#1e5ac8", &format!("background:repeating-linear-gradient({angle},#1e5ac8 0 2px,#f4f4f0 2px 4px)"));
+    fs::write(f.project.join("index.html"), strokes("180deg")).unwrap();
+    let comp = CdpEntryRenderer.capture_entry(&f.request(EntryStage::Hero)).unwrap().evidence().frames[0].png.clone();
+    fs::write(f.project.join("comp.png"), comp).unwrap();
+    fs::write(f.project.join("index.html"), strokes("90deg")).unwrap();
+    let hero = CdpEntryRenderer.capture_entry(&f.request(EntryStage::Hero)).unwrap().evidence().frames[0].png.clone();
+    let (code, text) = f.run(&["start", "--comp", "comp.png", "--artifact", "index.html"]);
+    assert_eq!(code, 0, "{text}");
+
+    // The host owns the service and selects the review session before the build.
+    let service = CaptureService::start(&f.project, Some(&f.session()));
+    let remote = service.renderer();
+
+    // Both stages cross the transport with receipt-free frames.
+    for (stage, names) in [(EntryStage::Hero, &["hero"][..]), (EntryStage::Responsive, &["desktop", "mobile"][..])] {
+        let captured = remote.capture_entry(&f.request(stage)).unwrap();
+        let evidence = captured.evidence();
+        assert_eq!(evidence.report["captureMethod"], "assembled-page-viewport");
+        assert_eq!(evidence.report["captureService"]["schema"], "native-capture-service-v1");
+        assert_eq!(evidence.report["dependencyPolicy"], "static-inventory");
+        assert!(evidence.report["servedToPage"].as_array().is_some_and(|s| !s.is_empty()));
+        assert_eq!(evidence.frames.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), names);
+        for frame in &evidence.frames {
+            assert!(frame.regions.is_empty());
+            assert!(evidence.report["frameProofs"][&frame.name]["rasterCoverage"]["share"].as_f64().is_some());
+        }
+        captured.verify_current().unwrap();
+    }
+
+    // record hero reaches the gate's readings instead of failing at capture.
+    let (ok, text, report) = f.record_hero_with(&remote);
+    assert!(!ok, "{text}");
+    assert!(!text.contains("capture unavailable") && !text.contains("invalid native capture"), "{text}");
+    assert_eq!(report["nativeCapture"]["inputs"]["captureMethod"], "assembled-page-viewport");
+    assert_eq!(report["nativeCapture"]["inputs"]["humanTextReview"]["status"], "not-current");
+
+    // The user accepts that first viewport; through the service it binds and passes.
+    f.approve(&hero);
+    let (ok, text, report) = f.record_hero_with(&remote);
+    assert!(ok, "{text}");
+    assert_eq!(report["humanHeroReview"]["viewportAccepted"], true, "{report}");
+    assert_eq!(report["nativeCapture"]["inputs"]["humanTextReview"]["schema"], "human-assembled-reference-v1");
+
+    // The host audit matches the saved receipt-free evidence against its own capture.
+    let audit = service.post("/audit", &json!({"stage":"hero"}));
+    assert_eq!(audit["ok"], true, "{audit}");
+    let saved: Vec<_> = audit["savedEvidence"].as_array().unwrap().iter().filter_map(|e| e["path"].as_str()).collect();
+    for name in ["inputs.json", "human-approved.png", "hero.png", "hero-observations.json"] {
+        assert!(saved.contains(&format!(".impeccable/review/native/hero/{name}").as_str()), "{saved:?}");
+    }
+    assert_eq!(fs::read_to_string(f.project.join(".impeccable/review/native/hero/hero-observations.json")).unwrap().trim(), "[]");
 }

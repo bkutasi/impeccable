@@ -2,6 +2,11 @@
 //! The native caller owns the selection; private bound inputs are never HTTP routes.
 use impeccable_comp_verbs::asset_capture::capture_sha256 as hash;
 use serde_json::{Value, json};
+/// Most raster regions one native capture measures in a frame. The browser
+/// adapter batches a frame's regions into one document and refuses a larger
+/// batch, so no native capture, in process or through the host service, ever
+/// carries more receipts per frame than this.
+pub const MAX_CAPTURE_REGIONS: usize = 32;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
@@ -127,10 +132,10 @@ impl HtmlSnapshot {
         use impeccable_comp_verbs::asset_capture::AssetCaptureRequest;
         self.verify_current()?;
         if region_ids.is_empty()
-            || region_ids.len() > 32
+            || region_ids.len() > MAX_CAPTURE_REGIONS
             || region_ids.iter().copied().collect::<BTreeSet<_>>().len() != region_ids.len()
         {
-            return Err("capture requires 1 to 32 distinct regions".into());
+            return Err(format!("capture requires 1 to {MAX_CAPTURE_REGIONS} distinct regions"));
         }
         let spec: Value = serde_json::from_slice(
             self.bytes(spec_path)
