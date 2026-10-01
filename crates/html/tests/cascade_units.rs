@@ -197,6 +197,10 @@ fn checks_shim_helpers() {
     assert_eq!(resolve_var_refs("var(--a)", &props), "#fff");
     assert_eq!(resolve_var_refs("var( --b , red )", &props), "#fff");
     assert_eq!(resolve_var_refs("var(--missing, red )", &props), "red");
+    assert_eq!(
+        resolve_var_refs("var(--outer, var(--inner, 0))", &props),
+        "0"
+    );
     assert_eq!(resolve_var_refs("var(--missing)", &props), "var(--missing)");
     assert_eq!(resolve_var_refs("var(--loop)", &props), "var(--loop)");
     assert_eq!(resolve_var_refs("plain", &props), "plain");

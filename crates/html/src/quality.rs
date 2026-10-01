@@ -261,11 +261,18 @@ pub fn check_quality(q: &QualityInput<'_, '_>) -> Vec<RuleHit> {
                 let value = sv(style, k);
                 has_unresolved_var(value) || css_color_is_transparent(Some(value))
             };
+            let bs = |k: &str| {
+                let value = sv(style, k);
+                value.is_empty()
+                    || (value != "none"
+                        && value != "hidden"
+                        && !has_unresolved_var(value))
+            };
             let border_visible = [
-                border_w[0] > 0.0 && !bc("borderTopColor"),
-                border_w[1] > 0.0 && !bc("borderRightColor"),
-                border_w[2] > 0.0 && !bc("borderBottomColor"),
-                border_w[3] > 0.0 && !bc("borderLeftColor"),
+                border_w[0] > 0.0 && !bc("borderTopColor") && bs("borderTopStyle"),
+                border_w[1] > 0.0 && !bc("borderRightColor") && bs("borderRightStyle"),
+                border_w[2] > 0.0 && !bc("borderBottomColor") && bs("borderBottomStyle"),
+                border_w[3] > 0.0 && !bc("borderLeftColor") && bs("borderLeftStyle"),
             ];
             let outline_w = pf0(sv(style, "outlineWidth"));
             let outline_style_val = sv(style, "outlineStyle");
@@ -276,6 +283,7 @@ pub fn check_quality(q: &QualityInput<'_, '_>) -> Vec<RuleHit> {
                 && !has_unresolved_var(outline_color_val)
                 && !css_color_is_transparent(Some(outline_color_val))
                 && !outline_style_val.is_empty()
+                && !has_unresolved_var(outline_style_val)
                 && outline_style_val != "none";
             let bg_visible = has_visible_background_boundary(style, el);
             let any_visible = border_visible.iter().any(|b| *b) || outline_visible || bg_visible;

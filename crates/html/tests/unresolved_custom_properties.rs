@@ -68,3 +68,67 @@ fn concrete_var_fallbacks_still_report_real_cramped_padding() {
 
     assert_eq!(cramped_padding_ids(html, None).len(), 1);
 }
+
+#[test]
+fn nested_concrete_var_fallbacks_still_report_real_cramped_padding() {
+    let html = r#"
+        <style>
+          .reverse {
+            background: var(--missing-surface, #f5f5f5);
+            padding: var(--outer-padding, var(--inner-padding, 0));
+          }
+        </style>
+        <div class="reverse"><p>Readable card copy</p></div>
+    "#;
+
+    assert_eq!(cramped_padding_ids(html, None).len(), 1);
+}
+
+#[test]
+fn unresolved_border_style_is_not_a_visible_boundary() {
+    let html = r#"
+        <style>
+          .reverse {
+            border-width: 1px;
+            border-color: #111;
+            border-style: var(--missing-border-style);
+            padding: 0;
+          }
+        </style>
+        <div class="reverse"><p>Readable card copy</p></div>
+    "#;
+
+    assert!(cramped_padding_ids(html, None).is_empty());
+}
+
+#[test]
+fn unresolved_border_shorthand_component_is_not_a_visible_boundary() {
+    let html = r#"
+        <style>
+          .reverse {
+            border: 1px var(--missing-border-style) #111;
+            padding: 0;
+          }
+        </style>
+        <div class="reverse"><p>Readable card copy</p></div>
+    "#;
+
+    assert!(cramped_padding_ids(html, None).is_empty());
+}
+
+#[test]
+fn unresolved_outline_style_is_not_a_visible_boundary() {
+    let html = r#"
+        <style>
+          .reverse {
+            outline-width: 1px;
+            outline-color: #111;
+            outline-style: var(--missing-outline-style);
+            padding: 0;
+          }
+        </style>
+        <div class="reverse"><p>Readable card copy</p></div>
+    "#;
+
+    assert!(cramped_padding_ids(html, None).is_empty());
+}

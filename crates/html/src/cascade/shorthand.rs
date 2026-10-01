@@ -209,6 +209,9 @@ static ZERO_LENGTH_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^0(?:px|rem|em|%)?$").expect("ZERO_LENGTH_RE"));
 static BORDER_SIDE_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^border-(top|right|bottom|left)$").expect("BORDER_SIDE_RE"));
+static BORDER_SIDE_STYLE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^border-(top|right|bottom|left)-style$").expect("BORDER_SIDE_STYLE_RE")
+});
 
 fn box4(names: [&str; 4], vals: [String; 4]) -> Vec<Expanded> {
     let [a, b, c, d] = vals;
@@ -337,6 +340,34 @@ pub fn expand_static_declaration(prop: &str, value: &str) -> Vec<Expanded> {
             ],
             vals,
         );
+    }
+    if p == "border-style" {
+        if !VAR_ANYWHERE_RE.is_match(v) {
+            return Vec::new();
+        }
+        let vals = expand_static_box_values(&split_css_tokens(v));
+        return box4(
+            [
+                "borderTopStyle",
+                "borderRightStyle",
+                "borderBottomStyle",
+                "borderLeftStyle",
+            ],
+            vals,
+        );
+    }
+    if let Some(captures) = BORDER_SIDE_STYLE_RE.captures(&p) {
+        if !VAR_ANYWHERE_RE.is_match(v) {
+            return Vec::new();
+        }
+        let side = &captures[1];
+        let mut camel_side = String::new();
+        let mut chars = side.chars();
+        if let Some(first) = chars.next() {
+            camel_side.push_str(&first.to_uppercase().to_string());
+            camel_side.push_str(chars.as_str());
+        }
+        return vec![(format!("border{}Style", camel_side), v.to_string())];
     }
     if p == "padding" {
         let vals = expand_static_box_values(&split_css_tokens(v));

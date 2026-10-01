@@ -80,7 +80,7 @@ function Thumb({ url }: { url?: string }) {
 <link rel="stylesheet" href="brand/tokens.css">
 <style>
   .reverse {
-    background: var(--brand-surface);
+    background: #f5f5f5;
     padding: var(--brand-pad-y) var(--brand-pad-x);
   }
 </style>
