@@ -544,6 +544,7 @@ export const PROVIDER_BLOCK_TAGS = new Set([
   'kiro',
   'opencode',
   'pi',
+  'omp',
   'qoder',
   'rovo-dev',
   'trae',
